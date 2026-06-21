@@ -177,7 +177,7 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
         // FCM handler calls showIncomingCall() without calling configure()
         // first, so notificationHelper must already be available.
         // configure() will re-initialize it with the proper app name later.
-        notificationHelper = NotificationHelper(context, "Call")
+        notificationHelper = NotificationHelper(context, "Call", CallLabels.load(context))
         notificationHelper?.ensureNotificationChannel()
 
         Log.d(TAG, "onAttachedToEngine: Plugin attached (hash=${this.hashCode()}, isMainInstance=${instance == this}, instanceHash=${instance?.hashCode()})")
@@ -451,8 +451,13 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
 
             val appName = configMap["appName"] as? String ?: "CallBundle"
 
+            // Persist customizable/localizable UI labels so they survive into
+            // killed-state (background FCM) notifications and the native call
+            // screen, then build the notification helper with them.
+            CallLabels.save(context, configMap["android"] as? Map<*, *>)
+
             // Initialize notification helper
-            notificationHelper = NotificationHelper(context, appName)
+            notificationHelper = NotificationHelper(context, appName, CallLabels.load(context))
             notificationHelper?.ensureNotificationChannel()
 
             // Store background reject config (BackgroundRejectConfig)

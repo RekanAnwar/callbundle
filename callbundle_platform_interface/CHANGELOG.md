@@ -1,3 +1,8 @@
+## 1.1.0
+
+* Added `answerButtonText`, `declineButtonText`, `hangUpButtonText`, `voiceCallText`, and `videoCallText` to `AndroidCallConfig` for customizable/localizable call UI labels ([#1](https://github.com/Ikolvi/callbundle/issues/1)).
+* Fixed `MethodChannelCallBundle` handler registration to defer gracefully until the binary messenger is ready instead of logging an assertion error ([#2](https://github.com/Ikolvi/callbundle/issues/2)).
+
 ## 1.0.14
 
 * Added `callerAvatar` field to `NativeCallParams` for caller profile photo support.

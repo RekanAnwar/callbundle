@@ -110,6 +110,9 @@ class IncomingCallActivity : Activity() {
     private val density by lazy { resources.displayMetrics.density }
     private fun dp(value: Int): Int = (value * density + 0.5f).toInt()
 
+    // ── Customizable / localizable labels (persisted during configure) ──
+    private val labels by lazy { CallLabels.load(this) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         current = this
@@ -404,7 +407,7 @@ class IncomingCallActivity : Activity() {
         callerSection.addView(nameView)
 
         // Call type label
-        val typeLabel = if (callType == 1) "Incoming Video Call" else "Incoming Voice Call"
+        val typeLabel = labels.callTypeText(callType)
         val typeView = TextView(this).apply {
             text = typeLabel
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -452,7 +455,7 @@ class IncomingCallActivity : Activity() {
         declineGroup.addView(declineBtn)
 
         val declineLabel = TextView(this).apply {
-            text = "Decline"
+            text = labels.decline
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(Color.parseColor("#E0E0E0"))
             gravity = Gravity.CENTER
@@ -489,7 +492,7 @@ class IncomingCallActivity : Activity() {
         acceptGroup.addView(acceptBtn)
 
         val acceptLabel = TextView(this).apply {
-            text = "Accept"
+            text = labels.answer
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(Color.parseColor("#E0E0E0"))
             gravity = Gravity.CENTER

@@ -11,6 +11,11 @@ class AndroidCallConfig {
     this.oemAdaptiveMode = true,
     this.notificationChannelId,
     this.notificationChannelName,
+    this.answerButtonText,
+    this.declineButtonText,
+    this.hangUpButtonText,
+    this.voiceCallText,
+    this.videoCallText,
   });
 
   /// Label for the PhoneAccount in Android Settings → Phone → Calling accounts.
@@ -46,6 +51,30 @@ class AndroidCallConfig {
   /// Custom notification channel display name override.
   final String? notificationChannelName;
 
+  /// Custom label for the "answer/accept" call button.
+  ///
+  /// Applies to the incoming-call notification action and the native
+  /// full-screen call screen. Use this to translate or rename the button.
+  /// Defaults to `"Accept"` when null.
+  final String? answerButtonText;
+
+  /// Custom label for the "decline/reject" call button.
+  ///
+  /// Defaults to `"Decline"` when null.
+  final String? declineButtonText;
+
+  /// Custom label for the "hang up/end" button on the ongoing-call
+  /// notification. Defaults to `"End Call"` when null.
+  final String? hangUpButtonText;
+
+  /// Custom subtitle text shown for voice calls (e.g. for localization).
+  /// Defaults to `"Voice Call"` when null.
+  final String? voiceCallText;
+
+  /// Custom subtitle text shown for video calls (e.g. for localization).
+  /// Defaults to `"Video Call"` when null.
+  final String? videoCallText;
+
   /// Serializes this instance to a [Map] for MethodChannel transport.
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
@@ -57,6 +86,11 @@ class AndroidCallConfig {
         'notificationChannelId': notificationChannelId,
       if (notificationChannelName != null)
         'notificationChannelName': notificationChannelName,
+      if (answerButtonText != null) 'answerButtonText': answerButtonText,
+      if (declineButtonText != null) 'declineButtonText': declineButtonText,
+      if (hangUpButtonText != null) 'hangUpButtonText': hangUpButtonText,
+      if (voiceCallText != null) 'voiceCallText': voiceCallText,
+      if (videoCallText != null) 'videoCallText': videoCallText,
     };
   }
 
@@ -69,6 +103,11 @@ class AndroidCallConfig {
       oemAdaptiveMode: map['oemAdaptiveMode'] as bool? ?? true,
       notificationChannelId: map['notificationChannelId'] as String?,
       notificationChannelName: map['notificationChannelName'] as String?,
+      answerButtonText: map['answerButtonText'] as String?,
+      declineButtonText: map['declineButtonText'] as String?,
+      hangUpButtonText: map['hangUpButtonText'] as String?,
+      voiceCallText: map['voiceCallText'] as String?,
+      videoCallText: map['videoCallText'] as String?,
     );
   }
 
@@ -81,7 +120,12 @@ class AndroidCallConfig {
         other.useTelecomManager == useTelecomManager &&
         other.oemAdaptiveMode == oemAdaptiveMode &&
         other.notificationChannelId == notificationChannelId &&
-        other.notificationChannelName == notificationChannelName;
+        other.notificationChannelName == notificationChannelName &&
+        other.answerButtonText == answerButtonText &&
+        other.declineButtonText == declineButtonText &&
+        other.hangUpButtonText == hangUpButtonText &&
+        other.voiceCallText == voiceCallText &&
+        other.videoCallText == videoCallText;
   }
 
   @override
@@ -93,6 +137,11 @@ class AndroidCallConfig {
       oemAdaptiveMode,
       notificationChannelId,
       notificationChannelName,
+      answerButtonText,
+      declineButtonText,
+      hangUpButtonText,
+      voiceCallText,
+      videoCallText,
     );
   }
 

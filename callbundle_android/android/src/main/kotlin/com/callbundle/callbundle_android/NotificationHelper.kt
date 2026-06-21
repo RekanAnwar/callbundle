@@ -48,7 +48,8 @@ import androidx.core.graphics.drawable.IconCompat
  */
 class NotificationHelper(
     private val context: Context,
-    private val appName: String
+    private val appName: String,
+    private val labels: CallLabels = CallLabels()
 ) {
     companion object {
         private const val TAG = "NotificationHelper"
@@ -157,7 +158,7 @@ class NotificationHelper(
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_incoming)
             .setContentTitle(callerName)
-            .setContentText(handle ?: if (callType == 1) "Video Call" else "Voice Call")
+            .setContentText(handle ?: labels.callTypeText(callType))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -249,7 +250,7 @@ class NotificationHelper(
         val builder = NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_outgoing)
             .setContentTitle(callerName)
-            .setContentText(if (callType == 1) "Video Call" else "Voice Call")
+            .setContentText(labels.callTypeText(callType))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -265,7 +266,7 @@ class NotificationHelper(
         val endIntent = createActionPendingIntent(callId, "end")
         builder.addAction(
             android.R.drawable.ic_menu_close_clear_cancel,
-            "End Call",
+            labels.hangUp,
             endIntent
         )
 
@@ -360,12 +361,12 @@ class NotificationHelper(
 
         builder.addAction(
             android.R.drawable.ic_menu_close_clear_cancel,
-            "Decline",
+            labels.decline,
             declineIntent
         )
         builder.addAction(
             android.R.drawable.sym_call_outgoing,
-            "Accept",
+            labels.answer,
             acceptIntent
         )
     }

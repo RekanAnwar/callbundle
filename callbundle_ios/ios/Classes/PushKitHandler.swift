@@ -36,7 +36,11 @@ class PushKitHandler: NSObject {
 
     /// Registers for VoIP push notifications.
     ///
-    /// Must be called after `configure()` to ensure CallKit is ready.
+    /// Called from `CallBundlePlugin.register(with:)` at plugin startup, after
+    /// the CallKit and PushKit handlers are initialized but before Flutter/Dart
+    /// `configure()` runs. Registering this early is required so that VoIP pushes
+    /// delivered when the app is launched from a terminated state can be handled
+    /// immediately.
     func registerForVoipPush() {
         let registry = PKPushRegistry(queue: DispatchQueue.main)
         registry.delegate = self

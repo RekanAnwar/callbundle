@@ -89,14 +89,26 @@ class MethodChannelCallBundle extends CallBundlePlatform {
   void _ensureHandlerRegistered() {
     if (_isHandlerRegistered) return;
 
+    // The default BinaryMessenger is only available once the Flutter binding
+    // has been initialized. If the platform instance is constructed before
+    // `WidgetsFlutterBinding.ensureInitialized()` runs, defer registration to
+    // the next public API call instead of triggering an assertion error.
+    if (!_isBinaryMessengerReady) return;
+
+    methodChannel.setMethodCallHandler(_handleNativeCall);
+    _isHandlerRegistered = true;
+  }
+
+  /// Whether the default binary messenger is ready for channel registration.
+  ///
+  /// Accessing the binding before it is initialized throws an assertion, so
+  /// the probe is guarded and reported as "not ready" rather than an error.
+  bool get _isBinaryMessengerReady {
     try {
-      methodChannel.setMethodCallHandler(_handleNativeCall);
-      _isHandlerRegistered = true;
-    } catch (e) {
-      // The binary messenger may not be initialized yet (happens when
-      // the plugin is registered before WidgetsFlutterBinding.ensureInitialized).
-      // The handler will be registered on the next call (e.g., configure, showIncomingCall).
-      debugPrint('CallBundle: Deferred handler registration (binding not ready): $e');
+      ServicesBinding.instance.defaultBinaryMessenger;
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -144,7 +156,6 @@ class MethodChannelCallBundle extends CallBundlePlatform {
     }
   }
 
-  @override
   @override
   Future<void> configure(NativeCallConfig config) async {
     _ensureHandlerRegistered();

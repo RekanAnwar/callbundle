@@ -1,3 +1,7 @@
+## 1.1.0
+
+* **Terminated-state VoIP calls** — `PKPushRegistry` is now registered in `register(with:)` at plugin startup (before Dart `configure()`), so incoming calls are delivered when the app has been terminated, without any AppDelegate setup ([#3](https://github.com/Ikolvi/callbundle/issues/3)). Thanks @RekanAnwar.
+
 ## 1.0.14
 
 * **Caller avatar support** — profile photos attached to missed call notifications via `UNNotificationAttachment`.

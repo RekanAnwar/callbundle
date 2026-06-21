@@ -1,3 +1,7 @@
+## 1.1.0
+
+* **Customizable labels** — incoming/ongoing call notifications and the native full-screen call screen now honor `answerButtonText`, `declineButtonText`, `hangUpButtonText`, `voiceCallText`, and `videoCallText` from `AndroidCallConfig`. Labels are persisted so they also apply to killed-state (background FCM) calls ([#1](https://github.com/Ikolvi/callbundle/issues/1)).
+
 ## 1.0.14
 
 * **Caller avatar support** — profile photos displayed in incoming call full-screen Activity (via Coil), notification large icon, and CallStyle person icon.

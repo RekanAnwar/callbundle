@@ -1,3 +1,10 @@
+## 1.1.0
+
+* **Customizable Android notification labels** — `AndroidCallConfig` gains `answerButtonText`, `declineButtonText`, `hangUpButtonText`, `voiceCallText`, and `videoCallText` for renaming/localizing the call UI ([#1](https://github.com/Ikolvi/callbundle/issues/1)).
+* **iOS:** PushKit (`PKPushRegistry`) is now registered at plugin startup so incoming VoIP calls are delivered when the app is terminated, with no AppDelegate boilerplate ([#3](https://github.com/Ikolvi/callbundle/issues/3)).
+* **Fix:** MethodChannel handler registration no longer logs an assertion error when the binding isn't ready yet — registration is deferred gracefully ([#2](https://github.com/Ikolvi/callbundle/issues/2)).
+* Lock-step release: all federated packages aligned to 1.1.0.
+
 ## 1.0.15
 
 * Updated dependency constraints to require callbundle_platform_interface ^1.0.14, callbundle_android ^1.0.14, callbundle_ios ^1.0.14.

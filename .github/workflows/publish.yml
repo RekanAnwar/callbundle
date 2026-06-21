@@ -1,0 +1,93 @@
+# Automated publishing of the CallBundle federated plugin packages to pub.dev.
+#
+# Authentication uses pub.dev's OIDC integration (no long-lived secret).
+# On pub.dev → each package → Admin → Automated publishing, enable
+# "Publishing from GitHub Actions" with:
+#   Repository:  Ikolvi/callbundle
+#   Tag pattern: v{{version}}
+#
+# Trigger a release by pushing a tag that matches a package version, e.g.:
+#   git tag v1.0.15 && git push origin v1.0.15
+# Only packages whose pubspec version equals the tag version are published,
+# so a single tag pattern works for the whole monorepo even when package
+# versions are not in lock-step. Packages are published in dependency order.
+name: Publish to pub.dev
+
+on:
+  push:
+    tags:
+      # Must align with the pub.dev tag pattern: v{{version}}
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases, e.g. v1.0.15-beta.1
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate only (dry run) — do not publish"
+        type: boolean
+        default: true
+
+# Required for authentication to pub.dev using OIDC.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Configures the temporary pub.dev OIDC credentials used by `dart pub publish`.
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      # Flutter is required to resolve the plugin packages (they depend on the Flutter SDK).
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Publish packages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          publish_pkg() {
+            local dir="$1"
+            pushd "$dir" >/dev/null
+
+            local name version
+            name=$(grep -m1 '^name:' pubspec.yaml | awk '{print $2}')
+            version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+
+            # On a tag push, only publish the package whose version matches the tag.
+            if [ "$EVENT_NAME" = "push" ]; then
+              local tag_version="${REF_NAME#v}"
+              if [ "$version" != "$tag_version" ]; then
+                echo "Skipping $name ($version): does not match tag $REF_NAME"
+                popd >/dev/null
+                return 0
+              fi
+            fi
+
+            echo "::group::Publishing $name $version (dry_run=$DRY_RUN)"
+            flutter pub get
+            if [ "$DRY_RUN" = "true" ]; then
+              dart pub publish --dry-run
+            else
+              dart pub publish --force
+            fi
+            echo "::endgroup::"
+
+            popd >/dev/null
+          }
+
+          # Publish in dependency order: interface first, app-facing last.
+          publish_pkg callbundle_platform_interface
+          publish_pkg callbundle_android
+          publish_pkg callbundle_ios
+          publish_pkg callbundle
