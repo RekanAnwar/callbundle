@@ -442,8 +442,14 @@ object BackgroundCallRejectHelper {
                 return false
             }
 
-            // Resolve the body template with refresh token and a fresh UUID
+            // Resolve the body/headers template with tokens and a fresh UUID
+            val accessToken = if (!authKey.isNullOrEmpty()) {
+                readAuthToken(context, authKey, authKeyPrefix) ?: ""
+            } else {
+                ""
+            }
             val refreshData = mapOf(
+                "accessToken" to accessToken,
                 "refreshToken" to refreshToken,
                 "uuid" to UUID.randomUUID().toString()
             )
