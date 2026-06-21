@@ -8,6 +8,8 @@
 #
 # Trigger a release by pushing a tag that matches a package version, e.g.:
 #   git tag v1.0.15 && git push origin v1.0.15
+# or simply run the helper, which reads the version and pushes the tag for you:
+#   tool/release.sh
 # Only packages whose pubspec version equals the tag version are published,
 # so a single tag pattern works for the whole monorepo even when package
 # versions are not in lock-step. Packages are published in dependency order.

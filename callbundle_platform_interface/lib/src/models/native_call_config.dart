@@ -215,10 +215,8 @@ class IosCallConfig {
   factory IosCallConfig.fromMap(Map<String, dynamic> map) {
     return IosCallConfig(
       maximumCallGroups: map['maximumCallGroups'] as int? ?? 1,
-      maximumCallsPerCallGroup:
-          map['maximumCallsPerCallGroup'] as int? ?? 1,
-      includesCallsInRecents:
-          map['includesCallsInRecents'] as bool? ?? true,
+      maximumCallsPerCallGroup: map['maximumCallsPerCallGroup'] as int? ?? 1,
+      includesCallsInRecents: map['includesCallsInRecents'] as bool? ?? true,
       supportsVideo: map['supportsVideo'] as bool? ?? true,
       iconTemplateImageName: map['iconTemplateImageName'] as String?,
       ringtoneSound: map['ringtoneSound'] as String?,
@@ -348,8 +346,7 @@ class NativeCallConfig {
           (map['defaultVibrationPattern'] as List<dynamic>?)
               ?.map((e) => e as int)
               .toList(),
-      missedCallNotification:
-          map['missedCallNotification'] as bool? ?? true,
+      missedCallNotification: map['missedCallNotification'] as bool? ?? true,
       android: map['android'] != null
           ? AndroidCallConfig.fromMap(
               Map<String, dynamic>.from(
@@ -624,7 +621,7 @@ class BackgroundRejectConfig {
         'httpMethod: $httpMethod, '
         'authStorageKey: $authStorageKey, '
         'authKeyPrefix: ${authKeyPrefix ?? "default"}, '
-        'refreshToken: ${refreshToken != null ? "configured" : "none"})';  
+        'refreshToken: ${refreshToken != null ? "configured" : "none"})';
   }
 }
 

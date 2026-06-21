@@ -1,4 +1,3 @@
-
 /// iOS implementation of the CallBundle plugin.
 ///
 /// This package is endorsed by the `callbundle` app-facing package.

@@ -1,4 +1,12 @@
 include: package:flutter_lints/flutter.yaml
 
+# The nested `example/` app is an auto-generated harness with its own analysis
+# context and is not bootstrapped before publishing; exclude it so analyzing this
+# package doesn't report unresolved imports from it. The canonical example app
+# lives at the repository root (`/example`).
+analyzer:
+  exclude:
+    - example/**
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

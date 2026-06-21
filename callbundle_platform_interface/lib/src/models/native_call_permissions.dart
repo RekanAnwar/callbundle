@@ -102,8 +102,7 @@ class NativeCallPermissions {
       model: map['model'] as String? ?? 'unknown',
       osVersion: map['osVersion'] as String? ?? 'unknown',
       diagnosticInfo: Map<String, dynamic>.from(
-        map['diagnosticInfo'] as Map<dynamic, dynamic>? ??
-            <String, dynamic>{},
+        map['diagnosticInfo'] as Map<dynamic, dynamic>? ?? <String, dynamic>{},
       ),
     );
   }

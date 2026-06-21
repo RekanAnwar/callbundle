@@ -224,21 +224,18 @@ class IosCallParams {
   factory IosCallParams.fromMap(Map<String, dynamic> map) {
     return IosCallParams(
       iconName: map['iconName'] as String?,
-      handleType:
-          NativeHandleType.fromString(map['handleType'] as String?),
+      handleType: NativeHandleType.fromString(map['handleType'] as String?),
       supportsVideo: map['supportsVideo'] as bool? ?? true,
       supportsHolding: map['supportsHolding'] as bool? ?? false,
       supportsGrouping: map['supportsGrouping'] as bool? ?? false,
       maximumCallGroups: map['maximumCallGroups'] as int? ?? 1,
-      maximumCallsPerCallGroup:
-          map['maximumCallsPerCallGroup'] as int? ?? 1,
+      maximumCallsPerCallGroup: map['maximumCallsPerCallGroup'] as int? ?? 1,
       audioSessionMode: map['audioSessionMode'] as String? ?? 'default',
       audioSessionPreferredSampleRate:
           (map['audioSessionPreferredSampleRate'] as num?)?.toDouble() ??
               44100.0,
       audioSessionPreferredIOBufferDuration:
-          (map['audioSessionPreferredIOBufferDuration'] as num?)
-                  ?.toDouble() ??
+          (map['audioSessionPreferredIOBufferDuration'] as num?)?.toDouble() ??
               0.005,
       ringtone: map['ringtone'] as String?,
     );

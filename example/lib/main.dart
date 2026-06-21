@@ -15,10 +15,7 @@ class CallBundleExampleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CallBundle Example',
-      theme: ThemeData(
-        colorSchemeSeed: Colors.deepPurple,
-        useMaterial3: true,
-      ),
+      theme: ThemeData(colorSchemeSeed: Colors.deepPurple, useMaterial3: true),
       home: const HomePage(),
     );
   }
@@ -103,14 +100,18 @@ class _HomePageState extends State<HomePage> {
   /// 3. Request permissions (triggers system dialog)
   Future<void> _checkAndRequestPermissions() async {
     final status = await CallBundle.checkPermissions();
-    _addLog('Permission check: notification=${status.notificationPermission.name}');
+    _addLog(
+      'Permission check: notification=${status.notificationPermission.name}',
+    );
 
     if (status.notificationPermission != PermissionStatus.granted) {
       // Show a custom explanation dialog before the system prompt
       final shouldRequest = await _showPermissionExplanationDialog();
       if (shouldRequest) {
         final result = await CallBundle.requestPermissions();
-        _addLog('After request: notification=${result.notificationPermission.name}');
+        _addLog(
+          'After request: notification=${result.notificationPermission.name}',
+        );
       } else {
         _addLog('User declined permission dialog');
       }

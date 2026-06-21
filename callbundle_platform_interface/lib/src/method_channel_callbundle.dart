@@ -197,8 +197,8 @@ class MethodChannelCallBundle extends CallBundlePlatform {
 
   @override
   Future<List<NativeCallInfo>> getActiveCalls() async {
-    final List<dynamic>? result = await methodChannel.invokeMethod<
-        List<dynamic>>('getActiveCalls');
+    final List<dynamic>? result =
+        await methodChannel.invokeMethod<List<dynamic>>('getActiveCalls');
 
     if (result == null) return <NativeCallInfo>[];
 

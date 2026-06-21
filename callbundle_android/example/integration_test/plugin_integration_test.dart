@@ -14,7 +14,8 @@ import 'package:callbundle_android/callbundle_android.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('CallBundleAndroid can be instantiated', (WidgetTester tester) async {
+  testWidgets('CallBundleAndroid can be instantiated',
+      (WidgetTester tester) async {
     final plugin = CallBundleAndroid();
     expect(plugin, isNotNull);
   });

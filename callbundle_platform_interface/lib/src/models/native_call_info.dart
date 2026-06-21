@@ -50,8 +50,7 @@ class NativeCallInfo {
       'callType': callType.intValue,
       'state': state.name,
       'isAccepted': isAccepted,
-      if (startTime != null)
-        'startTime': startTime!.millisecondsSinceEpoch,
+      if (startTime != null) 'startTime': startTime!.millisecondsSinceEpoch,
       'extra': extra,
     };
   }

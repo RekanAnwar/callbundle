@@ -1,5 +1,13 @@
-# Continuous integration: format, analyze, and test every package in the
-# melos monorepo on pushes and pull requests targeting main.
+# Continuous integration: format, analyze, and test the CallBundle packages on
+# pushes and pull requests targeting main.
+#
+# Notes:
+# * `melos bootstrap --no-example` wires up path overrides for the five workspace
+#   packages (the four libraries + the top-level `example`) but skips the
+#   auto-generated per-plugin example harnesses, which can't be resolved before
+#   the packages are published (their hosted version constraints aren't on
+#   pub.dev yet).
+# * Analyze/test iterate the real packages explicitly to avoid those harnesses.
 name: CI
 
 on:
@@ -32,16 +40,30 @@ jobs:
           echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap workspace
-        run: melos bootstrap
+        run: melos bootstrap --no-example
 
       - name: Verify formatting
-        run: melos exec -- "dart format --output=none --set-exit-if-changed ."
+        run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze
-        run: melos exec -- "flutter analyze"
+        run: |
+          set -e
+          for p in callbundle_platform_interface callbundle_android callbundle_ios callbundle example; do
+            echo "::group::analyze $p"
+            (cd "$p" && flutter analyze)
+            echo "::endgroup::"
+          done
 
       - name: Test
-        run: melos exec --dir-exists=test -- "flutter test"
+        run: |
+          set -e
+          for p in callbundle_platform_interface callbundle_android callbundle_ios callbundle; do
+            if [ -d "$p/test" ]; then
+              echo "::group::test $p"
+              (cd "$p" && flutter test)
+              echo "::endgroup::"
+            fi
+          done
 
   build-android-example:
     name: Build Android example
@@ -67,7 +89,7 @@ jobs:
           echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap workspace
-        run: melos bootstrap
+        run: melos bootstrap --no-example
 
       - name: Build example APK (validates Android/Kotlin)
         working-directory: example
