@@ -1,0 +1,64 @@
+# Auto-tag releases. On every push to main this reads the version from the
+# app-facing package (callbundle/pubspec.yaml) and, if a matching `v<version>`
+# tag does not already exist, creates and pushes it. The pushed tag triggers
+# `publish.yml`, which publishes every package whose version matches the tag.
+#
+# IMPORTANT — triggering publish.yml:
+#   GitHub does NOT run workflows for tags pushed with the default GITHUB_TOKEN
+#   (this prevents recursive runs). For the auto-created tag to trigger
+#   publish.yml, add a Personal Access Token (fine-grained, Contents: write) as
+#   a repository secret named RELEASE_TOKEN. Without it the tag is still created,
+#   but you'll need to run publish.yml manually (workflow_dispatch) or re-push
+#   the tag to publish.
+name: Release (auto-tag)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Read package version
+        id: version
+        run: |
+          VERSION="$(grep -E '^version:' callbundle/pubspec.yaml | head -1 | sed -E 's/^version:[[:space:]]*//' | tr -d '[:space:]')"
+          if [ -z "$VERSION" ]; then
+            echo "Could not read version from callbundle/pubspec.yaml" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION (tag v$VERSION)"
+
+      - name: Create and push tag if missing
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists locally; nothing to do."
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Created and pushed $TAG."
