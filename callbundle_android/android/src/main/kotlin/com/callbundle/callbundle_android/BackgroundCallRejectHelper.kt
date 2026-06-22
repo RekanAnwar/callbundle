@@ -74,6 +74,8 @@ object BackgroundCallRejectHelper {
     private const val KEY_HTTP_METHOD = "http_method"
     private const val KEY_AUTH_STORAGE_KEY = "auth_storage_key"
     private const val KEY_AUTH_KEY_PREFIX = "auth_key_prefix"
+    private const val KEY_AUTH_STORAGE_NAMESPACE = "auth_storage_namespace"
+    private const val KEY_AUTH_TOKEN_CACHE = "auth_token_cache_json"
     private const val KEY_HEADERS = "headers_json"
     private const val KEY_BODY = "body"
 
@@ -114,6 +116,8 @@ object BackgroundCallRejectHelper {
         val httpMethod = configMap["httpMethod"] as? String ?: "PUT"
         val authStorageKey = configMap["authStorageKey"] as? String
         val authKeyPrefix = configMap["authKeyPrefix"] as? String
+        val authStorageNamespace = configMap["authStorageNamespace"] as? String
+        val authTokenCache = configMap["authTokenCache"] as? Map<*, *>
         val headers = configMap["headers"] as? Map<*, *>
         val body = configMap["body"] as? String
 
@@ -123,10 +127,15 @@ object BackgroundCallRejectHelper {
             .putString(KEY_HTTP_METHOD, httpMethod)
             .putString(KEY_AUTH_STORAGE_KEY, authStorageKey)
             .putString(KEY_AUTH_KEY_PREFIX, authKeyPrefix)
+            .putString(KEY_AUTH_STORAGE_NAMESPACE, authStorageNamespace)
+            .putString(
+                KEY_AUTH_TOKEN_CACHE,
+                if (authTokenCache != null) JSONObject(authTokenCache).toString() else null,
+            )
             .putString(KEY_HEADERS, if (headers != null) JSONObject(headers).toString() else null)
             .putString(KEY_BODY, body)
             .apply()
-        Log.d(TAG, "storeConfig: method=$httpMethod, url=${urlPattern.take(50)}..., authKey=$authStorageKey, customPrefix=${authKeyPrefix != null}")
+        Log.d(TAG, "storeConfig: method=$httpMethod, url=${urlPattern.take(50)}..., authKey=$authStorageKey, customPrefix=${authKeyPrefix != null}, storageNamespace=$authStorageNamespace, tokenCacheKeys=${authTokenCache?.keys}")
 
         // Store refresh token config if provided
         val refreshConfig = configMap["refreshToken"] as? Map<*, *>
@@ -300,15 +309,64 @@ object BackgroundCallRejectHelper {
      *   `flutter_secure_storage` prefix is used.
      * @return The decrypted token, or null if not found or on error
      */
+    private fun getSecureStorageFileName(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_AUTH_STORAGE_NAMESPACE, null)
+            ?: FLUTTER_SECURE_STORAGE_FILE
+    }
+
+    private fun readTokenFromCache(context: Context, key: String): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cacheJson = prefs.getString(KEY_AUTH_TOKEN_CACHE, null) ?: return null
+        return try {
+            val value = JSONObject(cacheJson).optString(key, null)
+            value?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            Log.w(TAG, "readTokenFromCache: Failed to parse cache for key=$key", e)
+            null
+        }
+    }
+
+    private fun updateTokenCache(context: Context, key: String, value: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cacheJson = prefs.getString(KEY_AUTH_TOKEN_CACHE, null)
+        val obj = try {
+            if (cacheJson != null) JSONObject(cacheJson) else JSONObject()
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        obj.put(key, value)
+        prefs.edit().putString(KEY_AUTH_TOKEN_CACHE, obj.toString()).apply()
+        Log.d(TAG, "updateTokenCache: cached key=$key (length=${value.length})")
+    }
+
     private fun readAuthToken(context: Context, key: String, customPrefix: String? = null): String? {
+        val fromStorage = readAuthTokenFromSecureStorage(context, key, customPrefix)
+        if (!fromStorage.isNullOrEmpty()) {
+            return fromStorage
+        }
+
+        val fromCache = readTokenFromCache(context, key)
+        if (fromCache != null) {
+            Log.d(TAG, "readAuthToken: Using cached token for key=$key (length=${fromCache.length})")
+        }
+        return fromCache
+    }
+
+    private fun readAuthTokenFromSecureStorage(
+        context: Context,
+        key: String,
+        customPrefix: String? = null,
+    ): String? {
         return try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
 
+            val storageFile = getSecureStorageFileName(context)
             val securePrefs = EncryptedSharedPreferences.create(
                 context,
-                FLUTTER_SECURE_STORAGE_FILE,
+                storageFile,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
@@ -320,9 +378,9 @@ object BackgroundCallRejectHelper {
             val prefixedKey = "${prefix}_${key}"
             val token = securePrefs.getString(prefixedKey, null)
             if (token != null) {
-                Log.d(TAG, "readAuthToken: Found token for key=$key (prefixed, length=${token.length})")
+                Log.d(TAG, "readAuthToken: Found token for key=$key in $storageFile (prefixed, length=${token.length})")
             } else {
-                Log.w(TAG, "readAuthToken: No value for prefixedKey=$prefixedKey in $FLUTTER_SECURE_STORAGE_FILE")
+                Log.w(TAG, "readAuthToken: No value for prefixedKey=$prefixedKey in $storageFile")
             }
             token
         } catch (e: Exception) {
@@ -613,14 +671,17 @@ object BackgroundCallRejectHelper {
         value: String,
         customPrefix: String? = null
     ) {
+        updateTokenCache(context, key, value)
+
         try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
 
+            val storageFile = getSecureStorageFileName(context)
             val securePrefs = EncryptedSharedPreferences.create(
                 context,
-                FLUTTER_SECURE_STORAGE_FILE,
+                storageFile,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
@@ -629,10 +690,9 @@ object BackgroundCallRejectHelper {
             val prefix = customPrefix ?: FLUTTER_SECURE_STORAGE_KEY_PREFIX
             val prefixedKey = "${prefix}_${key}"
             securePrefs.edit().putString(prefixedKey, value).apply()
-            Log.d(TAG, "writeSecureStorageValue: Stored value for key=$key (prefixed)")
+            Log.d(TAG, "writeSecureStorageValue: Stored value for key=$key in $storageFile (prefixed)")
         } catch (e: Exception) {
-            Log.e(TAG, "writeSecureStorageValue: Failed to write to " +
-                "EncryptedSharedPreferences", e)
+            Log.w(TAG, "writeSecureStorageValue: Failed to write to EncryptedSharedPreferences, cache updated only", e)
         }
     }
 }

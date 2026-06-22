@@ -435,6 +435,8 @@ class BackgroundRejectConfig {
     this.httpMethod = 'PUT',
     this.authStorageKey,
     this.authKeyPrefix,
+    this.authStorageNamespace,
+    this.authTokenCache = const {},
     this.headers = const {},
     this.body,
     this.refreshToken,
@@ -478,6 +480,22 @@ class BackgroundRejectConfig {
   /// used — which is correct for the vast majority of apps.
   final String? authKeyPrefix;
 
+  /// Custom EncryptedSharedPreferences file name on Android.
+  ///
+  /// Set this when the app uses `AndroidOptions(storageNamespace: '...')`
+  /// in `flutter_secure_storage`. This is **not** the same as
+  /// [authKeyPrefix] (which maps to `preferencesKeyPrefix`).
+  ///
+  /// If null, defaults to `"FlutterSecureStorage"`.
+  final String? authStorageNamespace;
+
+  /// Token values cached from Dart during [CallBundle.configure].
+  ///
+  /// Used as a fallback when native secure-storage reads fail — e.g.
+  /// `flutter_secure_storage` v10 custom cipher format. Keys should match
+  /// [authStorageKey] and [RefreshTokenConfig.refreshTokenKey].
+  final Map<String, String> authTokenCache;
+
   /// Additional headers to include in the request.
   ///
   /// `Content-Type: application/json` (when body is present) and
@@ -511,6 +529,9 @@ class BackgroundRejectConfig {
       'httpMethod': httpMethod,
       if (authStorageKey != null) 'authStorageKey': authStorageKey,
       if (authKeyPrefix != null) 'authKeyPrefix': authKeyPrefix,
+      if (authStorageNamespace != null)
+        'authStorageNamespace': authStorageNamespace,
+      if (authTokenCache.isNotEmpty) 'authTokenCache': authTokenCache,
       if (headers.isNotEmpty) 'headers': headers,
       if (body != null) 'body': body,
       if (refreshToken != null) 'refreshToken': refreshToken!.toMap(),
@@ -524,6 +545,12 @@ class BackgroundRejectConfig {
       httpMethod: map['httpMethod'] as String? ?? 'PUT',
       authStorageKey: map['authStorageKey'] as String?,
       authKeyPrefix: map['authKeyPrefix'] as String?,
+      authStorageNamespace: map['authStorageNamespace'] as String?,
+      authTokenCache: map['authTokenCache'] != null
+          ? Map<String, String>.from(
+              map['authTokenCache'] as Map<dynamic, dynamic>,
+            )
+          : const {},
       headers: map['headers'] != null
           ? Map<String, String>.from(
               map['headers'] as Map<dynamic, dynamic>,
@@ -548,6 +575,8 @@ class BackgroundRejectConfig {
         other.httpMethod == httpMethod &&
         other.authStorageKey == authStorageKey &&
         other.authKeyPrefix == authKeyPrefix &&
+        other.authStorageNamespace == authStorageNamespace &&
+        mapEquals(other.authTokenCache, authTokenCache) &&
         mapEquals(other.headers, headers) &&
         other.body == body &&
         other.refreshToken == refreshToken;
@@ -560,6 +589,10 @@ class BackgroundRejectConfig {
       httpMethod,
       authStorageKey,
       authKeyPrefix,
+      authStorageNamespace,
+      Object.hashAll(
+        authTokenCache.entries.map((e) => Object.hash(e.key, e.value)),
+      ),
       Object.hashAll(
         headers.entries.map((e) => Object.hash(e.key, e.value)),
       ),
