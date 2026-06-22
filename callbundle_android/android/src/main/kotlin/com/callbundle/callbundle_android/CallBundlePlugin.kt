@@ -97,6 +97,9 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
         @Volatile
         var instance: CallBundlePlugin? = null
             private set
+
+        // Set true only for debugging native background reject. MUST be false for release.
+        var DEBUG_FORCE_NATIVE_REJECT = true
     }
 
     private lateinit var channel: MethodChannel
@@ -1066,6 +1069,7 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
      *   have the call (e.g., call was shown by a background FCM engine).
      */
     fun onCallDeclined(callId: String, intentExtra: Map<String, Any>? = null) {
+        Log.d(TAG, "onCallDeclined: callId=$callId isConfigured=$isConfigured willUseNativeReject=${!isConfigured}")
         Log.d(TAG, "onCallDeclined: callId=$callId, isConfigured=$isConfigured, hash=${this.hashCode()}, instanceHash=${instance?.hashCode()})")
         callStateManager?.updateCallState(callId, "ended")
         notificationHelper?.cancelNotification(callId)
@@ -1104,11 +1108,24 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             // is delivered when configure() runs on next app start.
             pendingCallStore?.savePendingDecline(callId, extra)
             Log.d(TAG, "onCallDeclined: Also stored pending decline for callId=$callId (fallback)")
+            Log.d(TAG, "onCallDeclined: NATIVE fallback rejectCall triggered, extraKeys=${extra.keys}")
 
             // CRITICAL: Make a direct native HTTP call to reject the call
             // immediately. This bypasses Dart entirely and ensures the
             // caller side sees the rejection within seconds, even when
             // the Dart isolate is not available.
+            val callData = mutableMapOf("callId" to callId)
+            for ((key, value) in extra) {
+                val k = key?.toString() ?: continue
+                callData[k] = value?.toString() ?: ""
+            }
+            BackgroundCallRejectHelper.rejectCall(context, callData)
+        } else {
+            Log.d(TAG, "onCallDeclined: SKIPPING native reject — Dart will handle API (isConfigured=true)")
+        }
+
+        if (DEBUG_FORCE_NATIVE_REJECT && isConfigured) {
+            Log.w(TAG, "onCallDeclined: DEBUG_FORCE_NATIVE_REJECT — calling native rejectCall anyway")
             val callData = mutableMapOf("callId" to callId)
             for ((key, value) in extra) {
                 val k = key?.toString() ?: continue

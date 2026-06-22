@@ -114,6 +114,7 @@ class CallActionReceiver : BroadcastReceiver() {
             }
             ACTION_DECLINE -> {
                 Log.d(TAG, "onReceive: Decline action for callId=$callId")
+                Log.d(TAG, "onReceive: DECLINE callId=$callId pluginNull=${plugin == null} pluginHash=${plugin?.hashCode()}")
                 if (plugin != null) {
                     // Extract caller metadata from the notification PendingIntent
                     // as fallback when callStateManager doesn't have the call
@@ -126,6 +127,7 @@ class CallActionReceiver : BroadcastReceiver() {
                             }
                         }
                     } else null
+                    Log.d(TAG, "onReceive: DECLINE → Dart path (plugin alive), extraKeys=${declineExtra?.keys}")
                     plugin.onCallDeclined(callId, declineExtra)
                 } else {
                     // App killed and plugin is null: cancel notification
@@ -149,6 +151,7 @@ class CallActionReceiver : BroadcastReceiver() {
                     // Pass all available call data for generic placeholder resolution.
                     val callData = mutableMapOf("callId" to callId)
                     declineMap.forEach { (key, value) -> callData[key] = value.toString() }
+                    Log.d(TAG, "onReceive: DECLINE → NATIVE path (plugin null), callDataKeys=${callData.keys}")
                     BackgroundCallRejectHelper.rejectCall(context, callData)
                 }
             }

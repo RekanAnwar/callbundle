@@ -175,6 +175,8 @@ object BackgroundCallRejectHelper {
             return
         }
 
+        Log.d(TAG, "rejectCall: START callId=$callId thread=${Thread.currentThread().name} dataKeys=${callData.keys}")
+
         Thread {
             try {
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -184,6 +186,8 @@ object BackgroundCallRejectHelper {
                 val authKeyPrefix = prefs.getString(KEY_AUTH_KEY_PREFIX, null)
                 val headersJson = prefs.getString(KEY_HEADERS, null)
                 val body = prefs.getString(KEY_BODY, null)
+
+                Log.d(TAG, "rejectCall: config urlPattern=${urlPattern?.take(80)} method=$httpMethod authKey=$authKey prefix=$authKeyPrefix body=$body")
 
                 if (urlPattern.isNullOrEmpty()) {
                     Log.w(TAG, "rejectCall: No urlPattern configured. Skipping native reject.")
@@ -207,6 +211,7 @@ object BackgroundCallRejectHelper {
                         Log.w(TAG, "rejectCall: Auth token is null/empty for key=$authKey. Proceeding without auth.")
                     }
                 }
+                Log.d(TAG, "rejectCall: authToken present=${!authToken.isNullOrEmpty()} length=${authToken?.length ?: 0}")
 
                 // Make HTTP request
                 var responseCode = executeRequest(
@@ -388,6 +393,7 @@ object BackgroundCallRejectHelper {
 
             val responseCode = connection.responseCode
             Log.d(TAG, "executeRequest: HTTP $responseCode for $httpMethod ${resolvedUrl.take(80)}")
+            Log.d(TAG, "executeRequest: HTTP $responseCode $httpMethod ${resolvedUrl.take(80)}")
 
             if (responseCode !in 200..299) {
                 val errorBody = try {
@@ -429,16 +435,21 @@ object BackgroundCallRejectHelper {
             val refreshHeadersJson = prefs.getString(KEY_REFRESH_HEADERS, null)
             val authKey = prefs.getString(KEY_AUTH_STORAGE_KEY, null)
 
+            Log.d(TAG, "attemptTokenRefresh: START refreshUrl=$refreshUrl refreshTokenKey=$refreshTokenKey accessTokenPath=$accessTokenPath authKey=$authKey")
+
             if (refreshUrl.isNullOrEmpty() || refreshTokenKey.isNullOrEmpty() || accessTokenPath.isNullOrEmpty()) {
                 Log.w(TAG, "attemptTokenRefresh: Refresh config incomplete " +
                     "(url=$refreshUrl, tokenKey=$refreshTokenKey, accessPath=$accessTokenPath)")
+                Log.d(TAG, "attemptTokenRefresh: RESULT success=false")
                 return false
             }
 
             // Read the refresh token from secure storage
             val refreshToken = readAuthToken(context, refreshTokenKey, authKeyPrefix)
+            Log.d(TAG, "attemptTokenRefresh: refreshToken present=${!refreshToken.isNullOrEmpty()} length=${refreshToken?.length ?: 0}")
             if (refreshToken.isNullOrEmpty()) {
                 Log.w(TAG, "attemptTokenRefresh: No refresh token found for key=$refreshTokenKey")
+                Log.d(TAG, "attemptTokenRefresh: RESULT success=false")
                 return false
             }
 
@@ -453,9 +464,11 @@ object BackgroundCallRejectHelper {
                 "refreshToken" to refreshToken,
                 "uuid" to UUID.randomUUID().toString()
             )
+            Log.d(TAG, "attemptTokenRefresh: accessToken present=${accessToken.isNotEmpty()} length=${accessToken.length}")
             val resolvedBody = if (bodyTemplate != null) {
                 resolvePlaceholders(bodyTemplate, refreshData)
             } else null
+            Log.d(TAG, "attemptTokenRefresh: resolvedBody=${resolvedBody?.take(200)}")
 
             Log.d(TAG, "attemptTokenRefresh: $refreshMethod $refreshUrl")
 
@@ -493,11 +506,13 @@ object BackgroundCallRejectHelper {
                 }
 
                 val responseCode = connection.responseCode
+                Log.d(TAG, "attemptTokenRefresh: HTTP $responseCode")
                 if (responseCode !in 200..299) {
                     val errorBody = try {
                         connection.errorStream?.bufferedReader()?.readText() ?: "no body"
                     } catch (_: Exception) { "unreadable" }
                     Log.w(TAG, "attemptTokenRefresh: HTTP $responseCode — $errorBody")
+                    Log.d(TAG, "attemptTokenRefresh: RESULT success=false")
                     return false
                 }
 
@@ -510,6 +525,7 @@ object BackgroundCallRejectHelper {
                 if (newAccessToken.isNullOrEmpty()) {
                     Log.w(TAG, "attemptTokenRefresh: Could not extract access token " +
                         "from path=$accessTokenPath")
+                    Log.d(TAG, "attemptTokenRefresh: RESULT success=false")
                     return false
                 }
 
@@ -533,12 +549,14 @@ object BackgroundCallRejectHelper {
                 }
 
                 Log.d(TAG, "attemptTokenRefresh: SUCCESS — tokens refreshed")
+                Log.d(TAG, "attemptTokenRefresh: RESULT success=true")
                 return true
             } finally {
                 connection.disconnect()
             }
         } catch (e: Exception) {
             Log.e(TAG, "attemptTokenRefresh: Failed", e)
+            Log.d(TAG, "attemptTokenRefresh: RESULT success=false")
             return false
         }
     }
