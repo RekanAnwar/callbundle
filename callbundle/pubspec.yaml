@@ -13,7 +13,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  callbundle_platform_interface: ^1.0.14
+  callbundle_platform_interface: 
+    path: ../callbundle_platform_interface
   callbundle_android: 
     path: ../callbundle_android
   callbundle_ios: 
