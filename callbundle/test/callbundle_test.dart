@@ -9,6 +9,8 @@ class MockCallBundlePlatform extends CallBundlePlatform {
   final List<String> calls = <String>[];
   final StreamController<NativeCallEvent> eventController =
       StreamController<NativeCallEvent>.broadcast();
+  final StreamController<String> voipTokenController =
+      StreamController<String>.broadcast();
   final Completer<void> readyCompleter = Completer<void>();
 
   @override
@@ -71,12 +73,16 @@ class MockCallBundlePlatform extends CallBundlePlatform {
   Stream<NativeCallEvent> get onEvent => eventController.stream;
 
   @override
+  Stream<String> get onVoipTokenUpdated => voipTokenController.stream;
+
+  @override
   Future<void> get onReady => readyCompleter.future;
 
   @override
   Future<void> dispose() async {
     calls.add('dispose');
     await eventController.close();
+    await voipTokenController.close();
   }
 }
 

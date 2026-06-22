@@ -204,11 +204,28 @@ class CallBundle {
   /// Returns the current VoIP push token (iOS only).
   ///
   /// Returns `null` on Android or if the token hasn't been received yet.
-  /// Listen to [onEvent] for `onVoipTokenUpdated` events to get
-  /// real-time token updates.
+  /// Subscribe to [onVoipTokenUpdated] for real-time token refresh events.
   static Future<String?> getVoipToken() {
     return _platform.getVoipToken();
   }
+
+  /// Stream of VoIP push token updates (iOS only).
+  ///
+  /// Emits whenever PushKit delivers a new token. Use this to register
+  /// the token with your push server, similar to
+  /// `FirebaseMessaging.onTokenRefresh`.
+  ///
+  /// ```dart
+  /// CallBundle.onVoipTokenUpdated.listen((token) {
+  ///   registerVoipTokenWithServer(token);
+  /// });
+  ///
+  /// // Also fetch the current token on startup in case it arrived early.
+  /// final token = await CallBundle.getVoipToken();
+  /// if (token != null) registerVoipTokenWithServer(token);
+  /// ```
+  static Stream<String> get onVoipTokenUpdated =>
+      _platform.onVoipTokenUpdated;
 
   /// Stream of native call events.
   ///

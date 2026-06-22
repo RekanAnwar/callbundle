@@ -176,8 +176,21 @@ abstract class CallBundlePlatform extends PlatformInterface {
   /// Returns the current VoIP push token (iOS only).
   ///
   /// Returns `null` on Android or if the token hasn't been received yet.
+  /// Subscribe to [onVoipTokenUpdated] for real-time token refresh events.
   Future<String?> getVoipToken() {
     throw UnimplementedError('getVoipToken() has not been implemented.');
+  }
+
+  /// Stream of VoIP push token updates (iOS only).
+  ///
+  /// Emits whenever PushKit delivers a new token via
+  /// `PKPushRegistryDelegate.didUpdate pushCredentials`. Use this to
+  /// register the token with your push server, similar to
+  /// `FirebaseMessaging.onTokenRefresh`.
+  ///
+  /// No events are emitted on Android.
+  Stream<String> get onVoipTokenUpdated {
+    throw UnimplementedError('onVoipTokenUpdated has not been implemented.');
   }
 
   /// Stream of native call events.

@@ -34,6 +34,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final List<String> _eventLog = [];
   StreamSubscription<NativeCallEvent>? _eventSub;
+  StreamSubscription<String>? _voipTokenSub;
   String? _voipToken;
   bool _isConfigured = false;
 
@@ -44,6 +45,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initCallBundle() async {
+    // Listen for VoIP token updates (iOS only, similar to FCM onTokenRefresh)
+    _voipTokenSub = CallBundle.onVoipTokenUpdated.listen((token) {
+      setState(() => _voipToken = token);
+      _addLog('VoIP token updated: ${token.substring(0, 8)}...');
+    });
+
     // Listen for call events
     _eventSub = CallBundle.onEvent.listen((event) {
       setState(() {
@@ -198,6 +205,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _eventSub?.cancel();
+    _voipTokenSub?.cancel();
     CallBundle.dispose();
     super.dispose();
   }

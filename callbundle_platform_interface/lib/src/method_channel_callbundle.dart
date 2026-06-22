@@ -66,6 +66,10 @@ class MethodChannelCallBundle extends CallBundlePlatform {
   final StreamController<NativeCallEvent> _eventController =
       StreamController<NativeCallEvent>.broadcast();
 
+  /// Broadcast stream controller for iOS VoIP push token updates.
+  final StreamController<String> _voipTokenController =
+      StreamController<String>.broadcast();
+
   /// Completer for the native-side ready signal.
   final Completer<void> _readyCompleter = Completer<void>();
 
@@ -136,9 +140,10 @@ class MethodChannelCallBundle extends CallBundlePlatform {
         return null;
 
       case 'onVoipTokenUpdated':
-        // VoIP token updates are delivered as a special event type.
-        // The token is stored natively; this notification allows
-        // Dart-side caching or forwarding to backend.
+        final String? token = call.arguments as String?;
+        if (token != null && token.isNotEmpty) {
+          _voipTokenController.add(token);
+        }
         return null;
 
       case 'onReady':
@@ -277,6 +282,9 @@ class MethodChannelCallBundle extends CallBundlePlatform {
   Stream<NativeCallEvent> get onEvent => _eventController.stream;
 
   @override
+  Stream<String> get onVoipTokenUpdated => _voipTokenController.stream;
+
+  @override
   Future<void> get onReady => _readyCompleter.future;
 
   @override
@@ -285,5 +293,6 @@ class MethodChannelCallBundle extends CallBundlePlatform {
     methodChannel.setMethodCallHandler(null);
     _isHandlerRegistered = false;
     await _eventController.close();
+    await _voipTokenController.close();
   }
 }
