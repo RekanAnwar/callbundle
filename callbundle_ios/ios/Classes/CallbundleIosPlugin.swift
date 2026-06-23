@@ -3,6 +3,7 @@ import UIKit
 import CallKit
 import PushKit
 import AVFoundation
+import Security
 
 /// Main entry point for the CallBundle iOS plugin.
 ///
@@ -133,6 +134,10 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
             includesCallsInRecents: includesCallsInRecents
         )
 
+        if let backgroundReject = args["backgroundReject"] as? [String: Any] {
+            BackgroundCallRejectHelper.storeConfig(backgroundReject)
+        }
+
         // Send ready signal
         isReady = true
         sendReadySignal()
@@ -175,7 +180,6 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
         // immediately when the user answers (CXAnswerCallAction can fire
         // very quickly after reportNewIncomingCall).
         let extra = args["extra"] as? [String: Any]
-        NSLog("[CallBundle] handleShowIncomingCall: callId=\(callId), callerName=\(callerName), extraKeys=\(extra?.keys.sorted() ?? []), extraCount=\(extra?.count ?? 0)")
         // Use addOrUpdateCall so that if PushKit already stored a basic entry,
         // the richer extra from Dart is merged in rather than creating a duplicate.
         callStore?.addOrUpdateCall(callId: callId, callerName: callerName, handle: handle, callerAvatar: callerAvatar, extra: extra)
@@ -187,13 +191,15 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
             handleType: cxHandleType,
             callerName: callerName,
             hasVideo: hasVideo
-        ) { [weak self] error in
+        ) { error in
             if let error = error {
-                // DO NOT remove from callStore here.
-                // If PushKit already reported this call, the second reportIncomingCall
-                // will fail, but the call is still valid and the user may answer it.
-                // Removing here would destroy the extra data needed by sendCallEvent.
-                NSLog("[CallBundle] handleShowIncomingCall: reportIncomingCall error (call may already exist via PushKit): \(error.localizedDescription)")
+                // PushKit may have already reported this call. Extra was merged above;
+                // treat duplicate UUID as success so Dart does not surface an error.
+                if CallKitController.isCallUUIDAlreadyExists(error) {
+                    result(nil)
+                    return
+                }
+
                 result(FlutterError(
                     code: "INCOMING_CALL_ERROR",
                     message: error.localizedDescription,
@@ -254,13 +260,11 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
         }
 
         callKitController?.endCall(uuid: uuidFromString(callId))
-        callStore?.removeCall(callId: callId)
         result(nil)
     }
 
     private func handleEndAllCalls(result: @escaping FlutterResult) {
         callKitController?.endAllCalls()
-        callStore?.removeAllCalls()
         result(nil)
     }
 
@@ -377,9 +381,10 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
         NSLog("[CallBundle] sendCallEvent: type=\(type), callId=\(callId), extraKeys=\(resolvedExtra?.keys.sorted() ?? []), isReady=\(isReady)")
 
         guard isReady else {
-            // Store as pending if not ready (cold-start scenario)
             if type == "accepted" {
                 callStore?.savePendingAccept(callId: callId, extra: resolvedExtra)
+            } else if type == "declined" {
+                callStore?.savePendingDecline(callId: callId, extra: resolvedExtra)
             }
             return
         }
@@ -417,8 +422,66 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
 
     /// Delivers pending events stored during cold-start.
     private func deliverPendingEvents() {
-        guard let pending = callStore?.consumePendingAccept() else { return }
-        sendCallEvent(type: "accepted", callId: pending.callId, isUserInitiated: true, extra: pending.extra)
+        if let pending = callStore?.consumePendingAccept() {
+            sendCallEvent(type: "accepted", callId: pending.callId, isUserInitiated: true, extra: pending.extra)
+        }
+        if let pending = callStore?.consumePendingDecline() {
+            sendCallEvent(type: "declined", callId: pending.callId, isUserInitiated: true, extra: pending.extra)
+        }
+    }
+
+    /// Maps incoming-ring decline to `declined` + native HTTP when Dart is not ready.
+    func handleCallEnded(callId: String, isUserInitiated: Bool) {
+        let callInfo = callStore?.getCall(callId: callId)
+        let resolvedExtra = callInfo?.extra ?? [:]
+        let isIncomingDecline = isUserInitiated && (callInfo?.state == "incoming")
+
+        if isIncomingDecline {
+            let callData = callDataForReject(callId: callId, extra: resolvedExtra)
+            if isReady {
+                sendCallEvent(
+                    type: "declined",
+                    callId: callId,
+                    isUserInitiated: true,
+                    extra: resolvedExtra
+                )
+            } else {
+                BackgroundCallRejectHelper.rejectCall(callData: callData)
+                callStore?.savePendingDecline(callId: callId, extra: resolvedExtra)
+            }
+        } else {
+            sendCallEvent(
+                type: "ended",
+                callId: callId,
+                isUserInitiated: isUserInitiated,
+                extra: resolvedExtra
+            )
+        }
+
+        callStore?.removeCall(callId: callId)
+    }
+
+    func markCallAccepted(callId: String) {
+        callStore?.updateCallState(callId: callId, state: "active")
+    }
+
+    private func callDataForReject(callId: String, extra: [String: Any]) -> [String: String] {
+        var callData: [String: String] = [:]
+        for (key, value) in extra {
+            callData[key] = "\(value)"
+        }
+        callData["id"] = (extra["id"] as? String) ?? callId
+        callData["callId"] = callId
+        if callData["roleSegment"] == nil {
+            let isServant: Bool
+            if let boolValue = extra["isReceiverServant"] as? Bool {
+                isServant = boolValue
+            } else {
+                isServant = "\(extra["isReceiverServant"] ?? false)" == "true"
+            }
+            callData["roleSegment"] = isServant ? "servant" : "client"
+        }
+        return callData
     }
 
     // MARK: - Audio Session
@@ -466,5 +529,160 @@ public class CallBundlePlugin: NSObject, FlutterPlugin {
 
         let uuid = NSUUID(uuidBytes: hash) as UUID
         return uuid
+    }
+}
+
+// MARK: - BackgroundCallRejectHelper
+
+enum BackgroundCallRejectHelper {
+    private static let prefsSuite = "com.callbundle.bg_reject"
+    private static let keyUrlPattern = "url_pattern"
+    private static let keyHttpMethod = "http_method"
+    private static let keyAuthStorageKey = "auth_storage_key"
+    private static let keyAuthKeyPrefix = "auth_key_prefix"
+    private static let keyAuthTokenCache = "auth_token_cache_json"
+    private static let keyHeaders = "headers_json"
+    private static let keyBody = "body"
+    private static let defaultKeyPrefix =
+        "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIHNlY3VyZSBzdG9yYWdlCg"
+    private static let placeholderRegex = try! NSRegularExpression(
+        pattern: "\\{(\\w+)\\}",
+        options: []
+    )
+
+    static func storeConfig(_ configMap: [String: Any]) {
+        guard let urlPattern = configMap["urlPattern"] as? String else { return }
+        let defaults = UserDefaults(suiteName: prefsSuite) ?? UserDefaults.standard
+        defaults.set(urlPattern, forKey: keyUrlPattern)
+        defaults.set((configMap["httpMethod"] as? String) ?? "POST", forKey: keyHttpMethod)
+        defaults.set(configMap["authStorageKey"] as? String, forKey: keyAuthStorageKey)
+        defaults.set(configMap["authKeyPrefix"] as? String, forKey: keyAuthKeyPrefix)
+        if let cache = configMap["authTokenCache"] as? [String: Any] {
+            defaults.set(cache, forKey: keyAuthTokenCache)
+        }
+        if let headers = configMap["headers"] as? [String: Any] {
+            defaults.set(headers, forKey: keyHeaders)
+        }
+        defaults.set(configMap["body"] as? String, forKey: keyBody)
+        defaults.synchronize()
+    }
+
+    static func rejectCall(callData: [String: String]) {
+        let callId = callData["callId"] ?? callData["id"]
+        guard let callId, !callId.isEmpty else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let defaults = UserDefaults(suiteName: prefsSuite) ?? UserDefaults.standard
+            guard let urlPattern = defaults.string(forKey: keyUrlPattern), !urlPattern.isEmpty else {
+                NSLog("[CallBundle] BackgroundReject: no urlPattern configured")
+                return
+            }
+
+            var enriched = callData
+            enriched["uuid"] = UUID().uuidString
+            if enriched["id"] == nil { enriched["id"] = callId }
+
+            let resolvedUrl = resolvePlaceholders(urlPattern, data: enriched)
+            let authKey = defaults.string(forKey: keyAuthStorageKey)
+            let authToken = readAuthToken(
+                key: authKey,
+                customPrefix: defaults.string(forKey: keyAuthKeyPrefix),
+                defaults: defaults
+            )
+            let httpMethod = defaults.string(forKey: keyHttpMethod) ?? "POST"
+            let bodyTemplate = defaults.string(forKey: keyBody)
+            let headers = headersMap(from: defaults)
+
+            NSLog("[CallBundle] BackgroundReject: \(httpMethod) \(resolvedUrl) callId=\(callId)")
+
+            let status = executeRequest(
+                urlString: resolvedUrl,
+                method: httpMethod,
+                authToken: authToken,
+                headers: headers,
+                bodyTemplate: bodyTemplate,
+                data: enriched
+            )
+
+            NSLog("[CallBundle] BackgroundReject: HTTP \(status) callId=\(callId)")
+        }
+    }
+
+    private static func headersMap(from defaults: UserDefaults) -> [String: String] {
+        guard let raw = defaults.dictionary(forKey: keyHeaders) else { return [:] }
+        return raw.reduce(into: [String: String]()) { $0[$1.key] = "\($1.value)" }
+    }
+
+    private static func resolvePlaceholders(_ template: String, data: [String: String]) -> String {
+        let nsTemplate = template as NSString
+        let matches = placeholderRegex.matches(
+            in: template, options: [], range: NSRange(location: 0, length: nsTemplate.length)
+        )
+        var result = template
+        for match in matches.reversed() {
+            let key = nsTemplate.substring(with: match.range(at: 1))
+            let replacement = data[key] ?? nsTemplate.substring(with: match.range(at: 0))
+            result = (result as NSString).replacingCharacters(in: match.range(at: 0), with: replacement)
+        }
+        return result
+    }
+
+    private static func readAuthToken(key: String?, customPrefix: String?, defaults: UserDefaults) -> String? {
+        guard let key, !key.isEmpty else { return nil }
+        if let fromKeychain = readAuthTokenFromKeychain(key: key, customPrefix: customPrefix) {
+            return fromKeychain
+        }
+        if let cache = defaults.dictionary(forKey: keyAuthTokenCache),
+           let cached = cache[key] as? String, !cached.isEmpty {
+            return cached
+        }
+        return nil
+    }
+
+    private static func readAuthTokenFromKeychain(key: String, customPrefix: String?) -> String? {
+        let account = "\(customPrefix ?? defaultKeyPrefix)_\(key)"
+        let service = Bundle.main.bundleIdentifier ?? ""
+        let queries: [[String: Any]] = [
+            [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account, kSecAttrService as String: service, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne],
+            [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne],
+        ]
+        for query in queries {
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+               let data = item as? Data,
+               let token = String(data: data, encoding: .utf8), !token.isEmpty {
+                return token
+            }
+        }
+        return nil
+    }
+
+    private static func executeRequest(
+        urlString: String, method: String, authToken: String?,
+        headers: [String: String], bodyTemplate: String?, data: [String: String]
+    ) -> Int {
+        guard let url = URL(string: urlString) else { return -1 }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        for (key, value) in headers {
+            request.setValue(resolvePlaceholders(value, data: data), forHTTPHeaderField: key)
+        }
+        if let authToken, !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let bodyTemplate {
+            request.httpBody = resolvePlaceholders(bodyTemplate, data: data).data(using: .utf8)
+            if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        var statusCode = -1
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            semaphore.signal()
+        }.resume()
+        semaphore.wait()
+        return statusCode
     }
 }

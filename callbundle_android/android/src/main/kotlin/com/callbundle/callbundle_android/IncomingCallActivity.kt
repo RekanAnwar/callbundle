@@ -264,13 +264,7 @@ class IncomingCallActivity : Activity() {
             } else {
                 Log.w(TAG, "proceedWithAccept: Launch intent null, using fallback")
                 // Fallback: call plugin directly (may not bring app to foreground)
-                CallBundlePlugin.instance?.onCallAccepted(id, callExtra?.let { bundle ->
-                    mutableMapOf<String, Any>().also { map ->
-                        bundle.keySet().forEach { key ->
-                            map[key] = bundle.getString(key) ?: ""
-                        }
-                    }
-                })
+                CallBundlePlugin.instance?.onCallAccepted(id, callExtraAsMap())
             }
         } catch (e: Exception) {
             Log.e(TAG, "proceedWithAccept: Failed to launch main app", e)
@@ -281,6 +275,16 @@ class IncomingCallActivity : Activity() {
         finish()
     }
 
+    private fun callExtraAsMap(): Map<String, Any>? {
+        return callExtra?.let { bundle ->
+            mutableMapOf<String, Any>().also { map ->
+                bundle.keySet().forEach { key ->
+                    map[key] = bundle.getString(key) ?: ""
+                }
+            }
+        }
+    }
+
     private fun handleDecline() {
         val id = callId ?: return
         Log.d(TAG, "handleDecline: callId=$id")
@@ -289,7 +293,7 @@ class IncomingCallActivity : Activity() {
 
         val plugin = CallBundlePlugin.instance
         if (plugin != null) {
-            plugin.onCallDeclined(id)
+            plugin.onCallDeclined(id, callExtraAsMap())
         } else {
             // Plugin null — cancel notification directly
             Log.d(TAG, "handleDecline: Plugin null, cancelling notification")

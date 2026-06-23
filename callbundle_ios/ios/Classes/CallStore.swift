@@ -19,6 +19,9 @@ class CallStore {
     private static let pendingAcceptKey = "com.callbundle.pending_accept"
     private static let pendingAcceptTimestampKey = "com.callbundle.pending_accept_ts"
     private static let pendingAcceptExtraKey = "com.callbundle.pending_accept_extra"
+    private static let pendingDeclineKey = "com.callbundle.pending_decline"
+    private static let pendingDeclineTimestampKey = "com.callbundle.pending_decline_ts"
+    private static let pendingDeclineExtraKey = "com.callbundle.pending_decline_extra"
     private static let pendingTTL: TimeInterval = 60 // 60 seconds
 
     // MARK: - Active Call Management
@@ -174,6 +177,44 @@ class CallStore {
         }
 
         NSLog("[CallBundle] Consumed pending accept: \(callId)")
+        return (callId: callId, extra: extra)
+    }
+
+    func savePendingDecline(callId: String, extra: [String: Any]? = nil) {
+        defaults.set(callId, forKey: CallStore.pendingDeclineKey)
+        defaults.set(Date().timeIntervalSince1970, forKey: CallStore.pendingDeclineTimestampKey)
+        if let extra = extra, !extra.isEmpty {
+            let stringExtra = extra.reduce(into: [String: String]()) { result, pair in
+                result[pair.key] = "\(pair.value)"
+            }
+            defaults.set(stringExtra, forKey: CallStore.pendingDeclineExtraKey)
+        } else {
+            defaults.removeObject(forKey: CallStore.pendingDeclineExtraKey)
+        }
+        defaults.synchronize()
+        NSLog("[CallBundle] Saved pending decline: \(callId)")
+    }
+
+    func consumePendingDecline() -> (callId: String, extra: [String: Any])? {
+        guard let callId = defaults.string(forKey: CallStore.pendingDeclineKey) else {
+            return nil
+        }
+
+        let timestamp = defaults.double(forKey: CallStore.pendingDeclineTimestampKey)
+        let elapsed = Date().timeIntervalSince1970 - timestamp
+        let extra = defaults.dictionary(forKey: CallStore.pendingDeclineExtraKey) ?? [:]
+
+        defaults.removeObject(forKey: CallStore.pendingDeclineKey)
+        defaults.removeObject(forKey: CallStore.pendingDeclineTimestampKey)
+        defaults.removeObject(forKey: CallStore.pendingDeclineExtraKey)
+        defaults.synchronize()
+
+        guard elapsed < CallStore.pendingTTL else {
+            NSLog("[CallBundle] Pending decline expired: \(callId)")
+            return nil
+        }
+
+        NSLog("[CallBundle] Consumed pending decline: \(callId)")
         return (callId: callId, extra: extra)
     }
 }

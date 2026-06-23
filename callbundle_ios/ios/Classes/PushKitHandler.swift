@@ -1,6 +1,13 @@
 import Foundation
 import PushKit
 
+/// VoIP push `link` values — must match `Links` in notification_linksz.dart.
+private enum VoipPushLink {
+    static let incomingCall = "core/incoming-call"
+    static let callDeclined = "core/call-declined"
+    static let callCancelled = "core/call-cancelled"
+}
+
 /// Handles PushKit VoIP push registration and token management.
 ///
 /// ## Key Design Decision
@@ -78,21 +85,29 @@ extension PushKitHandler: PKPushRegistryDelegate {
         }
 
         let data = payload.dictionaryPayload
-        NSLog("[CallBundle] VoIP push received")
+        let link = data["link"] as? String
+        NSLog("[CallBundle] VoIP push received link=\(link ?? "nil")")
+
+        // Cancel/decline VoIP pushes must dismiss the active CallKit call — not
+        // report a new incoming call (which would flash "Unknown" caller name).
+        if link == VoipPushLink.callCancelled || link == VoipPushLink.callDeclined {
+            if let callId = extractCallId(from: data) {
+                dismissCall(callId: callId, link: link!)
+            } else {
+                NSLog("[CallBundle] VoIP dismiss: missing callId for link=\(link!)")
+            }
+            completion()
+            return
+        }
 
         // Extract call data from push payload
-        let callId = data["callId"] as? String ?? UUID().uuidString
-        let callerName = data["callerName"] as? String
-            ?? data["caller_name"] as? String
-            ?? "Unknown"
-        let handle = data["handle"] as? String
-            ?? data["phone"] as? String
-            ?? ""
-        let hasVideo = data["hasVideo"] as? Bool
-            ?? data["has_video"] as? Bool
-            ?? false
-        let callerAvatar = data["callerAvatar"] as? String
-            ?? data["caller_avatar"] as? String
+        let callId = extractCallId(from: data) ?? UUID().uuidString
+        let pushExtra = buildPushExtra(from: data, callId: callId)
+        let callerName = pushExtra["callerName"] as? String ?? "Unknown"
+        let handle = pushExtra["handle"] as? String ?? ""
+        let hasVideo = pushExtra["hasVideo"] as? Bool ?? false
+        let callerAvatar = pushExtra["userImage"] as? String
+            ?? pushExtra["callerAvatar"] as? String
 
         // CRITICAL: Must report incoming call SYNCHRONOUSLY here.
         // iOS will terminate the app if reportNewIncomingCall is not
@@ -103,11 +118,7 @@ extension PushKitHandler: PKPushRegistryDelegate {
                 type: "incoming",
                 callId: callId,
                 isUserInitiated: false,
-                extra: [
-                    "callerName": callerName,
-                    "handle": handle,
-                    "hasVideo": hasVideo,
-                ]
+                extra: pushExtra
             )
             completion()
             return
@@ -118,11 +129,6 @@ extension PushKitHandler: PKPushRegistryDelegate {
         // Store call data in callStore BEFORE reporting to CallKit.
         // This ensures the data is available if the user answers immediately
         // (CXAnswerCallAction can fire before Dart's handleShowIncomingCall runs).
-        let pushExtra: [String: Any] = [
-            "callerName": callerName,
-            "handle": handle,
-            "hasVideo": hasVideo,
-        ]
         (CallBundlePlugin.shared as? CallBundlePlugin)?.callStoreForPush?.addCall(
             callId: callId, callerName: callerName, handle: handle, callerAvatar: callerAvatar, extra: pushExtra
         )
@@ -135,18 +141,12 @@ extension PushKitHandler: PKPushRegistryDelegate {
             callerName: callerName,
             hasVideo: hasVideo
         ) { [weak self] error in
-            if let error = error {
-                NSLog("[CallBundle] Failed to report incoming VoIP call: \(error.localizedDescription)")
-            } else {
+            if error == nil {
                 self?.plugin?.sendCallEvent(
                     type: "incoming",
                     callId: callId,
                     isUserInitiated: false,
-                    extra: [
-                        "callerName": callerName,
-                        "handle": handle,
-                        "hasVideo": hasVideo,
-                    ]
+                    extra: pushExtra
                 )
             }
             completion()
@@ -163,6 +163,117 @@ extension PushKitHandler: PKPushRegistryDelegate {
     }
 
     // MARK: - Utilities
+
+    /// Dismisses an active CallKit call for remote cancel/decline VoIP pushes.
+    private func dismissCall(callId: String, link: String) {
+        let plugin = CallBundlePlugin.shared as? CallBundlePlugin
+        let uuid = uuidFromString(callId)
+
+        NSLog("[CallBundle] VoIP dismiss: link=\(link) callId=\(callId)")
+
+        plugin?.callKitControllerForPush?.endCall(uuid: uuid)
+        plugin?.callStoreForPush?.removeCall(callId: callId)
+    }
+
+    /// Resolves call ID from flat or nested notification payload.
+    private func extractCallId(from data: [AnyHashable: Any]) -> String? {
+        if let callId = data["callId"] as? String, !callId.isEmpty { return callId }
+        if let id = data["id"] as? String, !id.isEmpty { return id }
+
+        if let nested = data["data"] as? [String: Any] {
+            if let callId = nested["callId"] as? String, !callId.isEmpty { return callId }
+            if let id = nested["id"] as? String, !id.isEmpty { return id }
+        }
+
+        if let payload = data["payload"] as? String,
+           let jsonData = payload.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+           let nested = json["data"] as? [String: Any] {
+            if let callId = nested["callId"] as? String, !callId.isEmpty { return callId }
+            if let id = nested["id"] as? String, !id.isEmpty { return id }
+        }
+
+        return nil
+    }
+
+    /// Preserves the full VoIP payload and normalizes keys expected by
+    /// `CallData.fromMap` in Dart event listeners.
+    private func buildPushExtra(
+        from data: [AnyHashable: Any],
+        callId: String
+    ) -> [String: Any] {
+        var pushExtra: [String: Any] = [:]
+        for (key, value) in data {
+            if let key = key as? String, key != "aps" {
+                pushExtra[key] = value
+            }
+        }
+
+        let callerName = stringValue(from: data, keys: [
+            "callerUserDisplayName", "callerName", "caller_name",
+        ]) ?? "Unknown"
+        let handle = stringValue(from: data, keys: ["handle", "phone"]) ?? ""
+        let hasVideo = boolValue(from: data, key: "hasVideo")
+            || boolValue(from: data, key: "has_video")
+        let isReceiverServant = boolValue(from: data, key: "isReceiverServant")
+
+        pushExtra["id"] = callId
+        pushExtra["callId"] = callId
+        pushExtra["callerName"] = callerName
+        pushExtra["callerUserDisplayName"] = callerName
+        pushExtra["handle"] = handle
+        pushExtra["hasVideo"] = hasVideo
+        pushExtra["isReceiverServant"] = isReceiverServant
+        pushExtra["roleSegment"] = isReceiverServant ? "servant" : "client"
+
+        if let tripId = intValue(from: data, key: "tripId") {
+            pushExtra["tripId"] = tripId
+        }
+        if let channelId = stringValue(from: data, keys: ["channelId"]) {
+            pushExtra["channelId"] = channelId
+        }
+        if let callerUserId = stringValue(from: data, keys: ["callerUserId"]) {
+            pushExtra["callerUserId"] = callerUserId
+        }
+        if let receiverUserId = stringValue(from: data, keys: ["receiverUserId"]) {
+            pushExtra["receiverUserId"] = receiverUserId
+        }
+        if let userImage = stringValue(from: data, keys: ["userImage", "callerAvatar", "caller_avatar"]) {
+            pushExtra["userImage"] = userImage
+        }
+        if let timeoutAt = stringValue(from: data, keys: ["timeoutAt"]) {
+            pushExtra["timeoutAt"] = timeoutAt
+        }
+        if let agoraRtcToken = stringValue(from: data, keys: ["agoraRtcToken"]) {
+            pushExtra["agoraRtcToken"] = agoraRtcToken
+        }
+
+        return pushExtra
+    }
+
+    private func stringValue(from data: [AnyHashable: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let value = data[key] as? String, !value.isEmpty { return value }
+            if let value = data[key] as? NSNumber { return value.stringValue }
+        }
+        return nil
+    }
+
+    private func boolValue(from data: [AnyHashable: Any], key: String) -> Bool {
+        if let value = data[key] as? Bool { return value }
+        if let value = data[key] as? NSNumber { return value.boolValue }
+        if let value = data[key] as? String {
+            return value == "true" || value == "1"
+        }
+        return false
+    }
+
+    private func intValue(from data: [AnyHashable: Any], key: String) -> Int? {
+        if let value = data[key] as? Int { return value }
+        if let value = data[key] as? NSNumber { return value.intValue }
+        if let value = data[key] as? String { return Int(value) }
+        return nil
+    }
 
     private func uuidFromString(_ string: String) -> UUID {
         if let uuid = UUID(uuidString: string) {

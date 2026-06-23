@@ -129,6 +129,15 @@ class CallKitController: NSObject {
 
         provider?.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
             if let error = error {
+                // PushKit may have already reported this UUID. Treat as success,
+                // refresh the CallKit UI metadata, and keep uuidToCallId intact.
+                if Self.isCallUUIDAlreadyExists(error) {
+                    NSLog("[CallBundle] reportIncomingCall: call already exists for \(callId), updating metadata")
+                    self?.provider?.reportCall(with: uuid, updated: update)
+                    completion(nil)
+                    return
+                }
+
                 // Use async to avoid deadlocking if completion runs on `queue`
                 self?.queue.async {
                     self?.uuidToCallId.removeValue(forKey: uuid)
@@ -138,6 +147,13 @@ class CallKitController: NSObject {
                 completion(nil)
             }
         }
+    }
+
+    /// Returns true when CallKit rejects a duplicate [reportNewIncomingCall].
+    static func isCallUUIDAlreadyExists(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == CXErrorDomainIncomingCall
+            && nsError.code == CXErrorCodeIncomingCallError.callUUIDAlreadyExists.rawValue
     }
 
     /// Starts an outgoing call through CallKit.
@@ -260,6 +276,7 @@ extension CallKitController: CXProviderDelegate {
         let callId = uuidToCallId[action.callUUID] ?? action.callUUID.uuidString.lowercased()
         NSLog("[CallBundle] CXAnswerCallAction: callId=\(callId), uuid=\(action.callUUID), uuidToCallIdKeys=\(Array(uuidToCallId.keys)), pluginNil=\(plugin == nil)")
 
+        plugin?.markCallAccepted(callId: callId)
         plugin?.sendCallEvent(type: "accepted", callId: callId, isUserInitiated: true)
         action.fulfill()
     }
@@ -275,7 +292,7 @@ extension CallKitController: CXProviderDelegate {
 
         NSLog("[CallBundle] CXEndCallAction: \(callId) isUserInitiated=\(isUserInitiated)")
 
-        plugin?.sendCallEvent(type: "ended", callId: callId, isUserInitiated: isUserInitiated)
+        plugin?.handleCallEnded(callId: callId, isUserInitiated: isUserInitiated)
 
         uuidToCallId.removeValue(forKey: action.callUUID)
         action.fulfill()

@@ -947,17 +947,23 @@ class CallBundlePlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
         isUserInitiated: Boolean,
         extra: Map<*, *> = emptyMap<String, Any>()
     ) {
+        val resolvedExtra = if (extra.isNotEmpty()) {
+            extra
+        } else {
+            callStateManager?.getCall(callId)?.extra ?: emptyMap<String, Any>()
+        }
+
         val eventId = nextEventId++
         val eventMap = mapOf(
             "type" to type,
             "callId" to callId,
             "isUserInitiated" to isUserInitiated,
-            "extra" to extra,
+            "extra" to resolvedExtra,
             "timestamp" to System.currentTimeMillis(),
             "eventId" to eventId
         )
 
-        Log.w(TAG, "sendCallEvent: SENDING type=$type callId=$callId eventId=$eventId isConfigured=$isConfigured extraKeys=${extra.keys}")
+        Log.w(TAG, "sendCallEvent: SENDING type=$type callId=$callId eventId=$eventId isConfigured=$isConfigured extraKeys=${resolvedExtra.keys}")
 
         mainHandler.post {
             try {
